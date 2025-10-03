@@ -29,7 +29,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
-
+design.md
 # Database
 *.db
 *.sqlite
@@ -117,3 +117,9 @@ coverage.xml
 *.model
 *.pkl
 *.joblib
+
+# Kiro IDE spec files (development artifacts)
+.kiro/
+**/requirements.md
+**/design.md
+**/tasks.md
