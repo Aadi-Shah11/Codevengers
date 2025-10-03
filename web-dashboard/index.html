@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Access Control - Authority Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1><i class="fas fa-shield-alt"></i> Campus Access Control Dashboard</h1>
+                <div class="header-info">
+                    <span class="status-indicator online">
+                        <i class="fas fa-circle"></i> System Online
+                    </span>
+                    <span class="timestamp" id="currentTime"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- Video Upload Section -->
+            <section class="video-upload-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-video"></i> Vehicle Video Processing</h2>
+                </div>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h3>Upload Vehicle Video</h3>
+                        <p>Drag and drop video file here or click to browse</p>
+                        <input type="file" id="videoInput" accept="video/*" hidden>
+                        <button class="upload-btn" onclick="document.getElementById('videoInput').click()">
+                            Choose File
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div class="upload-progress" id="uploadProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <span class="progress-text" id="progressText">0%</span>
+                </div>
+                
+                <!-- Processing Status -->
+                <div class="processing-status" id="processingStatus" style="display: none;">
+                    <div class="status-content">
+                        <i class="fas fa-cog fa-spin"></i>
+                        <span>Processing video...</span>
+                    </div>
+                </div>
+                
+                <!-- Results Display -->
+                <div class="results-display" id="resultsDisplay" style="display: none;">
+                    <h3>Processing Results</h3>
+                    <div class="result-item">
+                        <label>Detected License Plate:</label>
+                        <span id="detectedPlate" class="result-value"></span>
+                    </div>
+                    <div class="result-item">
+                        <label>Verification Status:</label>
+                        <span id="verificationStatus" class="result-value"></span>
+                    </div>
+                    <div class="result-item">
+                        <label>Processing Time:</label>
+                        <span id="processingTime" class="result-value"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs and Monitoring Section -->
+            <section class="logs-monitoring-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-list-alt"></i> Access Logs & Alerts</h2>
+                    <div class="section-controls">
+                        <button class="refresh-btn" onclick="refreshLogs()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <select id="filterType" onchange="filterLogs()">
+                            <option value="all">All Entries</option>
+                            <option value="granted">Access Granted</option>
+                            <option value="denied">Access Denied</option>
+                            <option value="alerts">Alerts Only</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Real-time Alerts -->
+                <div class="alerts-container" id="alertsContainer">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Recent Alerts</h3>
+                    <div class="alerts-list" id="alertsList">
+                        <!-- Alerts will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Access Logs Table -->
+                <div class="logs-container">
+                    <h3><i class="fas fa-history"></i> Access History</h3>
+                    <div class="table-container">
+                        <table class="logs-table" id="logsTable">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Gate</th>
+                                    <th>User ID</th>
+                                    <th>License Plate</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th>Alert</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTableBody">
+                                <!-- Logs will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Statistics -->
+                <div class="statistics-container">
+                    <h3><i class="fas fa-chart-bar"></i> Today's Statistics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalAccess">0</div>
+                            <div class="stat-label">Total Access</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="grantedAccess">0</div>
+                            <div class="stat-label">Granted</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="deniedAccess">0</div>
+                            <div class="stat-label">Denied</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="activeAlerts">0</div>
+                            <div class="stat-label">Active Alerts</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
