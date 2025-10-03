@@ -1,318 +1,382 @@
-// Campus Access Control Dashboard JavaScript
+// Smart Campus Access Control - Frontend JavaScript
+// Connects to FastAPI backend for OCR video processing
 
-const API_BASE_URL = 'http://localhost:8000';
-
-// Initialize dashboard
-document.addEventListener('DOMContentLoaded', function() {
-    initializeDashboard();
-    setupEventListeners();
-    updateCurrentTime();
-    setInterval(updateCurrentTime, 1000);
-    
-    // Auto-refresh logs every 30 seconds
-    setInterval(refreshLogs, 30000);
-});
-
-function initializeDashboard() {
-    refreshLogs();
-    refreshAlerts();
-    updateStatistics();
-}
-
-function setupEventListeners() {
-    const uploadArea = document.getElementById('uploadArea');
-    const videoInput = document.getElementById('videoInput');
-    
-    // Drag and drop functionality
-    uploadArea.addEventListener('dragover', handleDragOver);
-    uploadArea.addEventListener('dragleave', handleDragLeave);
-    uploadArea.addEventListener('drop', handleDrop);
-    
-    // File input change
-    videoInput.addEventListener('change', handleFileSelect);
-}
-
-function updateCurrentTime() {
-    const now = new Date();
-    const timeString = now.toLocaleString();
-    document.getElementById('currentTime').textContent = timeString;
-}
-
-// File Upload Handlers
-function handleDragOver(e) {
-    e.preventDefault();
-    e.currentTarget.classList.add('dragover');
-}
-
-function handleDragLeave(e) {
-    e.preventDefault();
-    e.currentTarget.classList.remove('dragover');
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    e.currentTarget.classList.remove('dragover');
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        processVideoFile(files[0]);
-    }
-}
-
-function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) {
-        processVideoFile(file);
-    }
-}
-
-async function processVideoFile(file) {
-    // Validate file type
-    if (!file.type.startsWith('video/')) {
-        showError('Please select a valid video file.');
-        return;
-    }
-    
-    // Validate file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
-        showError('File size must be less than 10MB.');
-        return;
-    }
-    
-    try {
-        // Show upload progress
-        showUploadProgress();
+class OCRDashboard {
+    constructor() {
+        this.apiBaseUrl = 'http://localhost:8000/api';
+        this.stats = {
+            successCount: 0,
+            failedCount: 0,
+            totalProcessingTime: 0,
+            processedVideos: 0
+        };
         
-        // Create form data
+        this.init();
+    }
+
+    init() {
+        this.setupEventListeners();
+        this.loadStats();
+        this.loadRecentActivity();
+    }
+
+    setupEventListeners() {
+        const uploadArea = document.getElementById('uploadArea');
+        const videoInput = document.getElementById('videoInput');
+
+        // File input change
+        videoInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileUpload(e.target.files[0]);
+            }
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.handleFileUpload(files[0]);
+            }
+        });
+    }
+
+    async handleFileUpload(file) {
+        // Validate file
+        if (!this.validateFile(file)) {
+            return;
+        }
+
+        // Show processing status
+        this.showProcessingStatus();
+
+        try {
+            // Upload and process video
+            const result = await this.uploadVideo(file);
+            
+            // Show results
+            this.showResults(result);
+            
+            // Update stats
+            this.updateStats(result);
+            
+            // Add to activity
+            this.addActivity(result);
+            
+            // Show success toast
+            this.showToast('Video processed successfully!', 'success');
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            this.showError(error.message);
+            this.showToast('Failed to process video', 'error');
+        }
+    }
+
+    validateFile(file) {
+        // Check file type
+        const allowedTypes = ['video/mp4', 'video/avi', 'video/mov'];
+        if (!allowedTypes.includes(file.type)) {
+            this.showToast('Please upload a valid video file (MP4, AVI, MOV)', 'error');
+            return false;
+        }
+
+        // Check file size (10MB limit)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            this.showToast('File size must be less than 10MB', 'error');
+            return false;
+        }
+
+        return true;
+    }
+
+    async uploadVideo(file) {
         const formData = new FormData();
         formData.append('video_file', file);
-        formData.append('gate_id', 'MAIN_GATE');
-        
-        // Upload and process video
-        const response = await fetch(`${API_BASE_URL}/upload_video`, {
+        formData.append('gate_id', 'WEB_DASHBOARD');
+
+        const response = await fetch(`${this.apiBaseUrl}/vehicles/upload_video`, {
             method: 'POST',
             body: formData
         });
-        
+
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Upload failed');
         }
-        
-        const result = await response.json();
-        
-        // Hide progress and show results
-        hideUploadProgress();
-        showProcessingResults(result);
-        
-        // Refresh logs to show new entry
-        setTimeout(refreshLogs, 1000);
-        
-    } catch (error) {
-        console.error('Error processing video:', error);
-        hideUploadProgress();
-        showError('Failed to process video. Please try again.');
+
+        return await response.json();
     }
-}
 
-function showUploadProgress() {
-    document.getElementById('uploadProgress').style.display = 'block';
-    document.getElementById('processingStatus').style.display = 'block';
-    document.getElementById('resultsDisplay').style.display = 'none';
-    
-    // Simulate progress (in real implementation, use actual progress)
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 10;
-        document.getElementById('progressFill').style.width = `${progress}%`;
-        document.getElementById('progressText').textContent = `${progress}%`;
-        
-        if (progress >= 100) {
-            clearInterval(interval);
-        }
-    }, 200);
-}
+    showProcessingStatus() {
+        document.getElementById('uploadArea').style.display = 'none';
+        document.getElementById('resultContainer').style.display = 'none';
+        document.getElementById('processingStatus').style.display = 'block';
 
-function hideUploadProgress() {
-    document.getElementById('uploadProgress').style.display = 'none';
-    document.getElementById('processingStatus').style.display = 'none';
-}
-
-function showProcessingResults(result) {
-    const resultsDisplay = document.getElementById('resultsDisplay');
-    
-    document.getElementById('detectedPlate').textContent = result.license_plate || 'Not detected';
-    document.getElementById('verificationStatus').textContent = result.access_granted ? 'Authorized' : 'Unauthorized';
-    document.getElementById('processingTime').textContent = `${result.processing_time || 'N/A'}s`;
-    
-    // Apply status styling
-    const statusElement = document.getElementById('verificationStatus');
-    statusElement.className = result.access_granted ? 'result-value status-granted' : 'result-value status-denied';
-    
-    resultsDisplay.style.display = 'block';
-}
-
-// Logs Management
-async function refreshLogs() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/logs?limit=50&offset=0`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        displayLogs(data.logs || []);
-        updateStatistics();
-        
-    } catch (error) {
-        console.error('Error fetching logs:', error);
-        showError('Failed to fetch access logs.');
+        // Animate progress bar
+        this.animateProgress();
     }
-}
 
-function displayLogs(logs) {
-    const tbody = document.getElementById('logsTableBody');
-    tbody.innerHTML = '';
-    
-    logs.forEach(log => {
-        const row = document.createElement('tr');
+    animateProgress() {
+        const progressFill = document.getElementById('progressFill');
+        const processingMessage = document.getElementById('processingMessage');
         
-        const timestamp = new Date(log.timestamp).toLocaleString();
-        const statusClass = log.access_granted ? 'status-granted' : 'status-denied';
-        const statusText = log.access_granted ? 'Granted' : 'Denied';
-        const alertBadge = log.alert_triggered ? '<span class="status-badge alert-badge">Alert</span>' : '';
+        const messages = [
+            'Uploading video...',
+            'Extracting frames...',
+            'Analyzing with OCR...',
+            'Processing license plate...',
+            'Verifying against database...'
+        ];
+
+        let progress = 0;
+        let messageIndex = 0;
+
+        const interval = setInterval(() => {
+            progress += Math.random() * 15 + 5;
+            
+            if (progress > 100) {
+                progress = 100;
+                clearInterval(interval);
+            }
+
+            progressFill.style.width = `${progress}%`;
+
+            // Update message
+            if (messageIndex < messages.length - 1 && progress > (messageIndex + 1) * 20) {
+                messageIndex++;
+                processingMessage.textContent = messages[messageIndex];
+            }
+        }, 300);
+    }
+
+    showResults(result) {
+        document.getElementById('processingStatus').style.display = 'none';
+        document.getElementById('resultContainer').style.display = 'block';
+
+        // Update result icon and title
+        const resultIcon = document.getElementById('resultIcon');
+        const resultTitle = document.getElementById('resultTitle');
         
-        row.innerHTML = `
-            <td>${timestamp}</td>
-            <td>${log.gate_id || 'N/A'}</td>
-            <td>${log.user_id || 'N/A'}</td>
-            <td>${log.license_plate || 'N/A'}</td>
-            <td>${log.verification_method || 'N/A'}</td>
-            <td><span class="status-badge ${statusClass}">${statusText}</span></td>
-            <td>${alertBadge}</td>
+        if (result.ocr_results && result.ocr_results.license_plate) {
+            resultIcon.innerHTML = '<i class="fas fa-check-circle"></i>';
+            resultIcon.className = 'result-icon success';
+            resultTitle.textContent = 'License Plate Detected';
+        } else {
+            resultIcon.innerHTML = '<i class="fas fa-times-circle"></i>';
+            resultIcon.className = 'result-icon error';
+            resultTitle.textContent = 'No License Plate Found';
+        }
+
+        // Update result values
+        document.getElementById('licensePlate').textContent = 
+            result.ocr_results?.license_plate || 'Not detected';
+        
+        document.getElementById('confidence').textContent = 
+            result.ocr_results?.confidence ? `${(result.ocr_results.confidence * 100).toFixed(1)}%` : 'N/A';
+        
+        document.getElementById('accessStatus').textContent = 
+            result.verification?.access_granted ? 'Access Granted' : 'Access Denied';
+        
+        document.getElementById('processingTime').textContent = 
+            result.processing_time ? `${result.processing_time.toFixed(1)}s` : 'N/A';
+
+        // Style access status
+        const accessStatusElement = document.getElementById('accessStatus');
+        if (result.verification?.access_granted) {
+            accessStatusElement.style.color = 'var(--success-color)';
+        } else {
+            accessStatusElement.style.color = 'var(--danger-color)';
+        }
+    }
+
+    showError(message) {
+        document.getElementById('processingStatus').style.display = 'none';
+        document.getElementById('resultContainer').style.display = 'block';
+
+        const resultIcon = document.getElementById('resultIcon');
+        const resultTitle = document.getElementById('resultTitle');
+        
+        resultIcon.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+        resultIcon.className = 'result-icon error';
+        resultTitle.textContent = 'Processing Failed';
+
+        // Clear result values
+        document.getElementById('licensePlate').textContent = 'Error';
+        document.getElementById('confidence').textContent = 'N/A';
+        document.getElementById('accessStatus').textContent = 'Failed';
+        document.getElementById('processingTime').textContent = 'N/A';
+    }
+
+    updateStats(result) {
+        if (result.ocr_results?.license_plate) {
+            this.stats.successCount++;
+        } else {
+            this.stats.failedCount++;
+        }
+
+        if (result.processing_time) {
+            this.stats.totalProcessingTime += result.processing_time;
+            this.stats.processedVideos++;
+        }
+
+        // Update UI
+        document.getElementById('successCount').textContent = this.stats.successCount;
+        document.getElementById('failedCount').textContent = this.stats.failedCount;
+        
+        const avgTime = this.stats.processedVideos > 0 ? 
+            (this.stats.totalProcessingTime / this.stats.processedVideos).toFixed(1) : 0;
+        document.getElementById('avgTime').textContent = `${avgTime}s`;
+    }
+
+    addActivity(result) {
+        const activityList = document.getElementById('activityList');
+        const activityItem = document.createElement('div');
+        activityItem.className = 'activity-item';
+
+        const isSuccess = result.ocr_results?.license_plate;
+        const iconClass = isSuccess ? 'success' : 'warning';
+        const iconSymbol = isSuccess ? 'fas fa-check' : 'fas fa-exclamation';
+        const statusClass = result.verification?.access_granted ? 'granted' : 'denied';
+        const statusText = result.verification?.access_granted ? 'Access Granted' : 'Access Denied';
+
+        activityItem.innerHTML = `
+            <div class="activity-icon ${iconClass}">
+                <i class="${iconSymbol}"></i>
+            </div>
+            <div class="activity-content">
+                <div class="activity-title">
+                    ${isSuccess ? `License plate detected: ${result.ocr_results.license_plate}` : 'No license plate detected'}
+                </div>
+                <div class="activity-time">Just now</div>
+            </div>
+            <div class="activity-status ${statusClass}">${statusText}</div>
         `;
-        
-        tbody.appendChild(row);
-    });
-}
 
-// Alerts Management
-async function refreshAlerts() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/alerts/recent`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        // Add to top of list
+        activityList.insertBefore(activityItem, activityList.firstChild);
+
+        // Remove old items (keep only 5)
+        while (activityList.children.length > 5) {
+            activityList.removeChild(activityList.lastChild);
         }
-        
-        const data = await response.json();
-        displayAlerts(data.alerts || []);
-        
-    } catch (error) {
-        console.error('Error fetching alerts:', error);
     }
-}
 
-function displayAlerts(alerts) {
-    const alertsList = document.getElementById('alertsList');
-    alertsList.innerHTML = '';
-    
-    if (alerts.length === 0) {
-        alertsList.innerHTML = '<p style="color: #64748b; text-align: center; padding: 1rem;">No recent alerts</p>';
-        return;
+    loadStats() {
+        // Load stats from localStorage or API
+        const savedStats = localStorage.getItem('ocrDashboardStats');
+        if (savedStats) {
+            this.stats = { ...this.stats, ...JSON.parse(savedStats) };
+            this.updateStatsDisplay();
+        }
     }
-    
-    alerts.forEach(alert => {
-        const alertItem = document.createElement('div');
-        alertItem.className = `alert-item ${alert.resolved ? 'resolved' : ''}`;
+
+    updateStatsDisplay() {
+        document.getElementById('successCount').textContent = this.stats.successCount;
+        document.getElementById('failedCount').textContent = this.stats.failedCount;
         
-        const timestamp = new Date(alert.created_at).toLocaleString();
-        const icon = alert.resolved ? 'fa-check-circle' : 'fa-exclamation-triangle';
+        const avgTime = this.stats.processedVideos > 0 ? 
+            (this.stats.totalProcessingTime / this.stats.processedVideos).toFixed(1) : 0;
+        document.getElementById('avgTime').textContent = `${avgTime}s`;
+    }
+
+    saveStats() {
+        localStorage.setItem('ocrDashboardStats', JSON.stringify(this.stats));
+    }
+
+    loadRecentActivity() {
+        // This would typically load from an API
+        // For now, we'll use the existing sample data
+    }
+
+    showToast(message, type = 'info') {
+        const toastContainer = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
         
-        alertItem.innerHTML = `
-            <i class="fas ${icon}"></i>
-            <div style="flex: 1;">
-                <div style="font-weight: 500;">${alert.message}</div>
-                <div style="font-size: 0.8rem; color: #64748b;">${timestamp} - Gate: ${alert.gate_id}</div>
+        toast.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'times-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
             </div>
         `;
-        
-        alertsList.appendChild(alertItem);
+
+        toastContainer.appendChild(toast);
+
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 5000);
+    }
+
+    // Save stats when page unloads
+    beforeUnload() {
+        this.saveStats();
+    }
+}
+
+// Global functions for HTML onclick handlers
+function resetUpload() {
+    document.getElementById('uploadArea').style.display = 'block';
+    document.getElementById('processingStatus').style.display = 'none';
+    document.getElementById('resultContainer').style.display = 'none';
+    document.getElementById('videoInput').value = '';
+}
+
+function viewDetails() {
+    // This could open a modal with more detailed information
+    dashboard.showToast('Detailed view coming soon!', 'info');
+}
+
+function loadRecentActivity() {
+    dashboard.loadRecentActivity();
+    dashboard.showToast('Activity refreshed', 'success');
+}
+
+// Initialize dashboard when page loads
+let dashboard;
+
+document.addEventListener('DOMContentLoaded', () => {
+    dashboard = new OCRDashboard();
+    
+    // Save stats before page unload
+    window.addEventListener('beforeunload', () => {
+        dashboard.beforeUnload();
     });
-}
+});
 
-// Statistics
-function updateStatistics() {
-    // This would typically fetch real statistics from the API
-    // For now, we'll calculate from the current logs
-    const logs = Array.from(document.querySelectorAll('#logsTableBody tr'));
-    
-    const total = logs.length;
-    const granted = logs.filter(row => row.querySelector('.status-granted')).length;
-    const denied = total - granted;
-    const alerts = logs.filter(row => row.querySelector('.alert-badge')).length;
-    
-    document.getElementById('totalAccess').textContent = total;
-    document.getElementById('grantedAccess').textContent = granted;
-    document.getElementById('deniedAccess').textContent = denied;
-    document.getElementById('activeAlerts').textContent = alerts;
-}
-
-// Filtering
-function filterLogs() {
-    const filterType = document.getElementById('filterType').value;
-    const rows = document.querySelectorAll('#logsTableBody tr');
-    
-    rows.forEach(row => {
-        let show = true;
-        
-        switch (filterType) {
-            case 'granted':
-                show = row.querySelector('.status-granted') !== null;
-                break;
-            case 'denied':
-                show = row.querySelector('.status-denied') !== null;
-                break;
-            case 'alerts':
-                show = row.querySelector('.alert-badge') !== null;
-                break;
-            default:
-                show = true;
+// API Health Check
+async function checkAPIHealth() {
+    try {
+        const response = await fetch('http://localhost:8000/health');
+        if (response.ok) {
+            document.querySelector('.status-indicator').className = 'status-indicator online';
+            document.querySelector('.header-info span:last-child').textContent = 'System Online';
+        } else {
+            throw new Error('API not responding');
         }
-        
-        row.style.display = show ? '' : 'none';
-    });
+    } catch (error) {
+        document.querySelector('.status-indicator').className = 'status-indicator offline';
+        document.querySelector('.header-info span:last-child').textContent = 'System Offline';
+        console.error('API health check failed:', error);
+    }
 }
 
-// Error Handling
-function showError(message) {
-    // Create a simple error notification
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #fee2e2;
-        color: #991b1b;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #ef4444;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        z-index: 1000;
-        max-width: 300px;
-    `;
-    errorDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <i class="fas fa-exclamation-circle"></i>
-            <span>${message}</span>
-        </div>
-    `;
-    
-    document.body.appendChild(errorDiv);
-    
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (errorDiv.parentNode) {
-            errorDiv.parentNode.removeChild(errorDiv);
-        }
-    }, 5000);
-}
+// Check API health every 30 seconds
+setInterval(checkAPIHealth, 30000);
+checkAPIHealth(); // Initial check
